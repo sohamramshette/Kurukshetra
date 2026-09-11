@@ -1,6 +1,8 @@
 import { useState } from 'react'
 
 import { PaymentForm } from '../components/PaymentForm'
+import { GuardianIntercept } from '../components/GuardianIntercept'
+import { PaymentOutcome } from '../components/PaymentOutcome'
 import Guardian from './Guardian'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -35,37 +37,12 @@ function formatAmount(amount: string) {
   }).format(numericAmount)
 }
 
-function PaymentStatusCard({ error, onRetry, status }: { error: string | null; onRetry: () => void; status: ReturnType<typeof useGuardian>['status'] }) {
-  const isValidating = status === 'validating'
-  const isAnalyzing = status === 'analyzing'
-
-  if (isValidating || isAnalyzing) {
-    return (
-      <Card aria-live="polite" className="guardian-status-card" elevated>
-        <StatusBadge label={isValidating ? 'Validating payment' : 'Guardian analyzing'} status="pending" />
-        <h2 className="guardian-status-card__title">{isValidating ? 'Checking payment details...' : 'Payment Guardian is analyzing this transaction...'}</h2>
-        <p className="guardian-status-card__copy">{isValidating ? 'We are preparing this payment for its security review.' : 'Guardian is checking the recipient, amount, reason, and payment context before a decision.'}</p>
-        <div aria-label="Security analysis in progress" className="guardian-status-card__progress" role="progressbar"><span /></div>
-      </Card>
-    )
-  }
-
-  if (status === 'error') {
-    return (
-      <Card aria-live="assertive" className="guardian-status-card guardian-status-card--error" elevated>
-        <StatusBadge label="Analysis unavailable" status="danger" />
-        <h2 className="guardian-status-card__title">Guardian could not complete the review.</h2>
-        <p className="guardian-status-card__copy">{error ?? 'Please check the backend connection and try again.'}</p>
-        <Button onClick={onRetry} variant="secondary">Try analysis again</Button>
-      </Card>
-    )
-  }
-
+function PaymentStatusCard() {
   return (
     <Card className="guardian-status-card guardian-status-card--empty">
       <span className="guardian-status-card__empty-icon" aria-hidden="true">⌁</span>
       <h2 className="guardian-status-card__title">Your payment review will appear here.</h2>
-      <p className="guardian-status-card__copy">Submit the form to pause this payment at the Guardian handoff boundary.</p>
+      <p className="guardian-status-card__copy">Press Pay to pause this payment at the Guardian interception boundary before any money moves.</p>
     </Card>
   )
 }
@@ -77,24 +54,75 @@ export default function Payment() {
   const isSubmitting = guardian.status === 'validating' || guardian.status === 'analyzing'
   const isMockMode = guardian.source === 'mock'
 
-  if (guardian.status === 'guardian_pending' && guardian.payment && guardian.result) {
-    return <Guardian onBackToPayment={guardian.reset} payment={guardian.payment} result={guardian.result} source={guardian.source} />
+  const handleRetry = () => {
+    if (guardian.payment) void guardian.submitPayment(guardian.payment)
+  }
+
+  // Guardian interception: the payment never completes at this point.
+  if (isSubmitting && guardian.payment) {
+    return (
+      <GuardianIntercept
+        onBackToPayment={guardian.reset}
+        onRetry={handleRetry}
+        payment={guardian.payment}
+        phase={guardian.status === 'validating' ? 'validating' : 'analyzing'}
+        source={guardian.source}
+      />
+    )
+  }
+
+  // Fail-closed: a failed security check is never presented as safe.
+  if (guardian.status === 'error' && guardian.payment) {
+    return (
+      <GuardianIntercept
+        error={guardian.error}
+        onBackToPayment={guardian.reset}
+        onRetry={handleRetry}
+        payment={guardian.payment}
+        phase="error"
+        source={guardian.source}
+      />
+    )
+  }
+
+  if ((guardian.status === 'payment_completed' || guardian.status === 'payment_cancelled') && guardian.payment && guardian.result) {
+    return (
+      <PaymentOutcome
+        onStartNewPayment={guardian.reset}
+        outcome={guardian.status === 'payment_completed' ? 'completed' : 'cancelled'}
+        payment={guardian.payment}
+        result={guardian.result}
+        source={guardian.source}
+      />
+    )
+  }
+
+  if ((guardian.status === 'guardian_result' || guardian.status === 'action_pending') && guardian.payment && guardian.result) {
+    return (
+      <Guardian
+        actionError={guardian.actionError}
+        actionMessage={guardian.actionMessage}
+        onAcknowledgeGuidance={guardian.acknowledgeGuidance}
+        onBackToPayment={guardian.reset}
+        onCancelPayment={guardian.cancelPayment}
+        onConfirmPayment={guardian.confirmPayment}
+        payment={guardian.payment}
+        pendingAction={guardian.pendingAction}
+        result={guardian.result}
+        source={guardian.source}
+      />
+    )
   }
 
   const handleDraftChange = (nextDraft: PaymentDraft) => {
     setDraft(nextDraft)
     setSelectedScenario(null)
-    if (guardian.status === 'guardian_pending') guardian.reset()
   }
 
   const handleScenarioSelect = (scenario: DemoScenario) => {
     setDraft(DEMO_PAYMENT_SCENARIOS[scenario].values)
     setSelectedScenario(scenario)
     guardian.reset()
-  }
-
-  const handleRetry = () => {
-    if (guardian.payment) void guardian.submitPayment(guardian.payment)
   }
 
   return (
@@ -104,10 +132,10 @@ export default function Payment() {
           <div>
             <p className="eyebrow"><span aria-hidden="true" className="eyebrow__line" />Protected payment flow</p>
             <h1 className="payment-page__title" id="payment-title">Make a Payment</h1>
-            <p className="payment-page__subtitle">Set up your payment with a clear reason, then let Payment Guardian check the context before anything moves.</p>
+            <p className="payment-page__subtitle">Enter the payment details and press Pay. Payment Guardian intercepts the payment for a security review before any money leaves your account.</p>
           </div>
           <div className="payment-page__active-state">
-            <StatusBadge label={isMockMode ? 'Guardian demo active' : 'Live Guardian active'} status="protected" />
+            <StatusBadge label={isMockMode ? 'Guardian demo active' : 'Backend Guardian selected'} status="protected" />
             <span>{isMockMode ? 'Simulated review enabled' : 'Backend review enabled'}</span>
           </div>
         </div>
@@ -131,7 +159,7 @@ export default function Payment() {
                 {scenarioOptions.map((scenario) => {
                   const definition = DEMO_PAYMENT_SCENARIOS[scenario]
                   const isSelected = selectedScenario === scenario
-                  return <Button className={isSelected ? 'demo-scenario demo-scenario--selected' : 'demo-scenario'} key={scenario} onClick={() => handleScenarioSelect(scenario)} size="sm" type="button" variant={isSelected ? 'secondary' : 'ghost'}>{definition.label}</Button>
+                  return <Button className={isSelected ? 'demo-scenario demo-scenario--selected' : 'demo-scenario'} disabled={isSubmitting} key={scenario} onClick={() => handleScenarioSelect(scenario)} size="sm" type="button" variant={isSelected ? 'secondary' : 'ghost'}>{definition.label}</Button>
                 })}
               </div>
               <p className="demo-scenarios__description">{selectedScenario ? DEMO_PAYMENT_SCENARIOS[selectedScenario].description : 'Edit the fields to create your own payment analysis.'}</p>
@@ -155,9 +183,9 @@ export default function Payment() {
                 <div><dt>Reason</dt><dd>{draft.reason || 'No reason added yet'}</dd></div>
                 <div><dt>Currency</dt><dd>{draft.currency}</dd></div>
               </dl>
-              <div className="payment-summary-card__note"><span aria-hidden="true" className="status-dot" />No money moves until the Guardian review boundary is complete.</div>
+              <div className="payment-summary-card__note"><span aria-hidden="true" className="status-dot" />Pressing Pay does not complete the payment. Guardian reviews it first.</div>
             </Card>
-            <PaymentStatusCard error={guardian.error} onRetry={handleRetry} status={guardian.status} />
+            <PaymentStatusCard />
           </aside>
         </div>
       </PageContainer>

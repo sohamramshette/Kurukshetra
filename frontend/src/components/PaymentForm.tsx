@@ -201,12 +201,12 @@ export function PaymentForm({ isMockMode = false, isSubmitting = false, onChange
       </div>
 
       <div className="payment-form__security-note">
-        <StatusBadge label={isMockMode ? 'Guardian demo active' : 'Live Guardian active'} status="protected" />
-        <span>{isMockMode ? 'Simulated review happens before authorization.' : 'Backend review happens before authorization.'}</span>
+        <StatusBadge label={isMockMode ? 'Guardian demo active' : 'Backend Guardian selected'} status="protected" />
+        <span>{isMockMode ? 'Simulated review runs before this payment can complete.' : 'Guardian intercepts this payment before it can complete.'}</span>
       </div>
 
       <Button className="payment-form__submit" disabled={isSubmitting} loading={isSubmitting} size="lg" type="submit">
-        {isSubmitting ? 'Checking payment' : 'Review Payment'}
+        {isSubmitting ? 'Guardian is checking this payment' : 'Pay'}
       </Button>
     </form>
   )

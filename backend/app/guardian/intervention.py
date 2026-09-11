@@ -35,8 +35,8 @@ def determine_intervention(action: str) -> Dict[str, Any]:
             "ui_mode": "PROTECTIVE_HOLD",
             "friction_level": "HIGH",
             "cooling_period_seconds": 120,
-            "requires_explicit_override": True,
-            "primary_button": "Verify Independently"
+            "requires_explicit_override": False,
+            "primary_button": "Review independent-contact guidance"
         }
     else:  # BLOCK
         return {
