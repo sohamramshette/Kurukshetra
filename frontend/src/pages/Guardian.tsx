@@ -3,8 +3,6 @@ import { useState } from 'react'
 import { DecisionPanel } from '../components/DecisionPanel'
 import { EvidenceList } from '../components/EvidenceList'
 import { GuardianAlert } from '../components/GuardianAlert'
-import { GuardianInvestigation } from '../components/GuardianInvestigation'
-import { IndependentVerificationPanel } from '../components/IndependentVerificationPanel'
 import { SecurityTimeline } from '../components/SecurityTimeline'
 import { VerificationPanel } from '../components/VerificationPanel'
 import { ReactReasoningPanel } from '../components/ReactReasoningPanel'
@@ -17,41 +15,24 @@ import { PageContainer } from '../components/ui/PageContainer'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
-import type { GuardianAction, GuardianResultSource } from '../hooks/useGuardian'
-import type { GuardianAnalysisResult, GuardianDecision, GuardianTimelineStage, OverrideResponse } from '../types/guardian'
+import type { GuardianAnalysisResult, GuardianDecision, OverrideResponse } from '../types/guardian'
+import type { GuardianResultSource } from '../hooks/useGuardian'
 import type { PaymentDraft } from '../types/payment'
 
 export interface GuardianProps {
   payment: PaymentDraft
   result: GuardianAnalysisResult
   source: GuardianResultSource
-  actionError?: string | null
-  actionMessage?: string | null
-  pendingAction?: GuardianAction | null
-  onConfirmPayment: () => void
-  onCancelPayment: () => void
-  onAcknowledgeGuidance: () => void
   onBackToPayment: () => void
 }
 
-const agentLoop: GuardianTimelineStage[] = ['OBSERVE', 'REASON', 'VERIFY', 'REASSESS', 'ACT', 'EXPLAIN']
+const agentLoop = ['OBSERVE', 'REASON', 'VERIFY', 'REASSESS', 'ACT', 'EXPLAIN']
 
-export type AnalysisTab = 'react' | 'scam-graph' | 'sensors' | 'counterfactual' | 'evidence' | 'verification' | 'investigation' | 'timeline' | 'telemetry'
+export type AnalysisTab = 'react' | 'scam-graph' | 'sensors' | 'counterfactual' | 'evidence' | 'verification' | 'timeline' | 'telemetry'
 
-export default function Guardian({
-  actionError = null,
-  actionMessage: initialActionMessage = null,
-  onAcknowledgeGuidance,
-  onBackToPayment,
-  onCancelPayment,
-  onConfirmPayment,
-  payment,
-  pendingAction = null,
-  result,
-  source,
-}: GuardianProps) {
+export default function Guardian({ onBackToPayment, payment, result, source }: GuardianProps) {
   const [currentResult, setCurrentResult] = useState<GuardianAnalysisResult>(result)
-  const [actionMessage, setActionMessage] = useState<string | null>(initialActionMessage)
+  const [actionMessage, setActionMessage] = useState('')
   const [isCoercionModalOpen, setIsCoercionModalOpen] = useState(false)
   const [isCoolingModalOpen, setIsCoolingModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<AnalysisTab>('react')
@@ -75,16 +56,11 @@ export default function Guardian({
   }
 
   const handleCancelPayment = () => {
-    onCancelPayment()
+    setActionMessage(isMock ? 'Demo cancellation selected. No payment was sent.' : 'Cancellation selected for review. No cancellation request was sent.')
   }
 
   const handleProceedAnyway = () => {
     setIsCoolingModalOpen(true)
-  }
-
-  const handleVerifyIndependently = () => {
-    const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
-    document.getElementById('independent-verification')?.scrollIntoView({ behavior, block: 'center' })
   }
 
   const handleOverrideComplete = (res: OverrideResponse) => {
@@ -213,12 +189,7 @@ export default function Guardian({
             <h1 className="guardian-page__title" id="guardian-page-title">Payment Guardian</h1>
             <p className="guardian-page__subtitle">Real-time agentic review before an unsafe payment can proceed.</p>
           </div>
-          <Button disabled={pendingAction !== null} onClick={onBackToPayment} variant="ghost">← Start another payment</Button>
-        </div>
-
-        <div className="guardian-demo-note mb-3">
-          <Badge tone={isMock ? 'neutral' : 'success'}>{isMock ? 'Demo mode' : 'Live backend result'}</Badge>
-          <span>{isMock ? 'Simulated Guardian analysis • offline mock mode.' : 'Live Guardian analysis • decision, lifecycle, and audit are backend-controlled.'}</span>
+          <Button onClick={onBackToPayment} variant="ghost">← Start another payment</Button>
         </div>
 
         {/* Top Row: Executive Alert & Decision Actions (Side-by-side, perfectly balanced) */}
@@ -230,29 +201,16 @@ export default function Guardian({
               result={currentResult}
               source={source}
             />
-            {(currentResult.lifecycle?.requires_independent_guidance_acknowledgement || currentResult.lifecycle?.independent_guidance_acknowledged) ? (
-              <div className="mt-4" id="independent-verification">
-                <IndependentVerificationPanel
-                  lifecycle={currentResult.lifecycle}
-                  onAcknowledge={onAcknowledgeGuidance}
-                  pendingAction={pendingAction}
-                  source={source}
-                />
-              </div>
-            ) : null}
           </div>
 
           <aside className="guardian-top-grid__decision" aria-label="Guardian decision">
             <DecisionPanel
-              actionError={actionError}
               actionMessage={actionMessage}
               onBackToPayment={onBackToPayment}
               onCancelPayment={handleCancelPayment}
-              onConfirmPayment={onConfirmPayment}
               onProceedAnyway={handleProceedAnyway}
-              onVerifyRecipient={handleVerifyIndependently}
-              onStartCoercionCheck={handleVerifyRecipient}
-              pendingAction={pendingAction}
+              onVerifyRecipient={handleVerifyRecipient}
+              onStartCoercionCheck={() => setIsCoercionModalOpen(true)}
               result={currentResult}
             />
           </aside>
@@ -435,7 +393,6 @@ export default function Guardian({
                 <CounterfactualSimulator baselineResult={currentResult} payment={payment} />
                 <EvidenceList signals={currentResult.signals} source={source} />
                 <VerificationPanel checks={currentResult.verification} source={source} />
-                <GuardianInvestigation result={currentResult} source={source} />
                 <SecurityTimeline events={currentResult.timeline} source={source} />
                 {renderTelemetryCard()}
               </div>
@@ -481,10 +438,7 @@ export default function Guardian({
                   </div>
                 )}
                 {activeTab === 'verification' && (
-                  <div className="space-y-4">
-                    <VerificationPanel checks={currentResult.verification} source={source} />
-                    <GuardianInvestigation result={currentResult} source={source} />
-                  </div>
+                  <VerificationPanel checks={currentResult.verification} source={source} />
                 )}
                 {activeTab === 'timeline' && (
                   <SecurityTimeline events={currentResult.timeline} source={source} />

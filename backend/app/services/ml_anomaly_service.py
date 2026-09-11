@@ -160,7 +160,6 @@ class MLAnomalyService:
                 "pattern": "INSUFFICIENT_HISTORY",
                 "prior_payments_to_recipient": 0,
                 "escalation_ratio": 1.0,
-                "summary": "Insufficient process-local payment history to evaluate temporal escalation.",
                 "score_delta": 0
             }
 
@@ -178,7 +177,6 @@ class MLAnomalyService:
                 "pattern": "NO_PRIOR_RECIPIENT_HISTORY",
                 "prior_payments_to_recipient": len(related),
                 "escalation_ratio": 1.0,
-                "summary": "No repeated process-local recipient history was available for temporal escalation analysis.",
                 "score_delta": 0
             }
 
@@ -223,7 +221,6 @@ class MLAnomalyService:
                 "pattern": "NORMAL",
                 "prior_payments_to_recipient": len(related),
                 "escalation_ratio": escalation_ratio,
-                "summary": "No escalating process-local payment pattern was detected for this recipient.",
                 "score_delta": 0
             }
 

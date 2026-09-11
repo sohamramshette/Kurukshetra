@@ -35,7 +35,7 @@ def check_transaction_history(
         return {
             "check_name": "Transaction History & ML Anomaly",
             "status": "ANOMALOUS",
-            "summary": f"Isolation Forest flagged a behavioral outlier ({anomaly_pct}% model anomaly index). {ml_result['primary_driver']}.",
+            "summary": f"Isolation Forest flagged behavioral outlier ({anomaly_pct}% anomaly probability). {ml_result['primary_driver']}.",
             "details": {
                 "median_amount": median,
                 "amount": amount,
