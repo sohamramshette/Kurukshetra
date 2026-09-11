@@ -9,7 +9,8 @@ database_url = settings.DATABASE_URL
 if database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
 
-# Configure engine based on database dialect (PostgreSQL for Supabase, SQLite for local fallback)
+# SQLite remains available for legacy analysis-only development. The Phase 2 API startup
+# explicitly requires PostgreSQL because its durable lifecycle migration is PostgreSQL-specific.
 if database_url.startswith("sqlite"):
     engine = create_engine(
         database_url,

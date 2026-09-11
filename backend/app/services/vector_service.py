@@ -65,9 +65,9 @@ KNOWN_SCAM_TEMPLATES = [
 
 class SemanticVectorService:
     """
-    Semantic Vector Search & RAG matcher for known scam patterns.
-    Computes cosine similarity against curated real-world Indian fraud vectors.
-    See brain.md Section 8 & 31.
+    Local semantic similarity matcher for the bundled scam-pattern corpus.
+    Computes token-frequency cosine similarity; it is not an external vector
+    database, retrieval service, or independently verified fraud feed.
     """
 
     def __init__(self):

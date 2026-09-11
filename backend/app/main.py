@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
+from app.db.migrate import apply_migrations
 from app.api import api_router
 
 app = FastAPI(
@@ -14,13 +15,18 @@ app = FastAPI(
 # CORS middleware for Person 1's frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permits local frontend connection
-    allow_credentials=True,
+    allow_origins=list({settings.FRONTEND_URL, "http://127.0.0.1:5173"}),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Mount API routes under /api
+@app.on_event("startup")
+def ensure_schema_migrations():
+    apply_migrations()
+
+
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 

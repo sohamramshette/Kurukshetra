@@ -34,8 +34,12 @@ def analyze_recipient_handle(recipient_id: str, amount: float) -> Dict[str, Any]
     """
     check_name = "Recipient Handle Intelligence"
     lower = recipient_id.lower()
+    impersonated_brand = next((brand for keyword, brand in BRAND_KEYWORDS.items() if keyword in lower), None)
+    role_hits = [keyword for keyword in SUSPICIOUS_ROLE_KEYWORDS if keyword in lower]
+    brand_hit = impersonated_brand is not None
+    deterministic_delta = 25 if brand_hit and role_hits else 15 if brand_hit else 10 if len(role_hits) >= 2 else 0
 
-    # 1. Try Gemini handle intelligence (richest analysis)
+    # Optional model analysis may enrich but cannot suppress deterministic handle evidence.
     gemini_result = gemini_service.analyze_recipient_handle(recipient_id, amount)
 
     if gemini_result is not None:
@@ -44,18 +48,29 @@ def analyze_recipient_handle(recipient_id: str, amount: float) -> Dict[str, Any]
             or gemini_result["lookalike_detected"]
             or gemini_result["domain_mismatch"]
             or len(gemini_result["suspicious_keywords"]) >= 2
+            or brand_hit
+            or len(role_hits) >= 2
         )
         status = "FAILED" if is_threat else "PASSED"
-        score_delta = gemini_result["score_delta"] if is_threat else -5
+        score_delta = max(gemini_result["score_delta"], deterministic_delta) if is_threat else 0
+        combined_keywords = sorted(set(gemini_result["suspicious_keywords"] + role_hits))
+
+        deterministic_summary = None
+        if brand_hit and role_hits:
+            deterministic_summary = f"Handle '{recipient_id}' combines the '{impersonated_brand}' brand keyword with suspicious role keywords {role_hits}."
+        elif brand_hit:
+            deterministic_summary = f"Handle '{recipient_id}' contains the '{impersonated_brand}' brand keyword. Verify independently."
+        elif len(role_hits) >= 2:
+            deterministic_summary = f"Handle '{recipient_id}' contains multiple suspicious role keywords: {role_hits}."
 
         return {
             "check_name": check_name,
             "status": status,
-            "summary": gemini_result["threat_summary"] or f"Handle '{recipient_id}' analyzed by Gemini.",
+            "summary": deterministic_summary or gemini_result["threat_summary"] or f"Handle '{recipient_id}' shows no recognized impersonation indicator.",
             "details": {
-                "brand_impersonation_detected": gemini_result["brand_impersonation_detected"],
-                "impersonated_brand": gemini_result["impersonated_brand"],
-                "suspicious_keywords": gemini_result["suspicious_keywords"],
+                "brand_impersonation_detected": gemini_result["brand_impersonation_detected"] or brand_hit,
+                "impersonated_brand": gemini_result["impersonated_brand"] or impersonated_brand,
+                "suspicious_keywords": combined_keywords,
                 "lookalike_detected": gemini_result["lookalike_detected"],
                 "domain_mismatch": gemini_result["domain_mismatch"],
                 "confidence": gemini_result["confidence"],
@@ -64,15 +79,8 @@ def analyze_recipient_handle(recipient_id: str, amount: float) -> Dict[str, Any]
             }
         }
 
-    # 2. Deterministic fallback heuristic
-    impersonated_brand = None
-    for kw, brand in BRAND_KEYWORDS.items():
-        if kw in lower:
-            impersonated_brand = brand
-            break
-
-    role_hits = [kw for kw in SUSPICIOUS_ROLE_KEYWORDS if kw in lower]
-    brand_hit = impersonated_brand is not None
+    # Deterministic fallback heuristic
+    # (values were computed before optional model analysis so they always run).
 
     if brand_hit and role_hits:
         return {

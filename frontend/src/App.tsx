@@ -58,7 +58,7 @@ function App() {
               </button>
             ))}
           </nav>
-          <div className="topbar__status"><span aria-hidden="true" className="status-dot" />{isMockMode ? 'Mock Guardian mode' : 'Live Guardian mode'}</div>
+          <div className="topbar__status"><span aria-hidden="true" className="status-dot" />{isMockMode ? 'Mock Guardian mode' : 'Backend Guardian mode'}</div>
         </PageContainer>
       </header>
 

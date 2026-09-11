@@ -1,106 +1,142 @@
-from typing import Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+import uuid
+from typing import Any, Dict, Literal, Optional
+
+from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.guardian.agent import guardian_agent
-from app.services.payment_service import payment_service
-from app.services.audit_service import audit_service
+from app.services.payment_service import GUIDANCE_TEXT_VERSION, PaymentLifecycleError, payment_service
 
 router = APIRouter()
 
 
 class PaymentAnalyzeRequest(BaseModel):
+    # Retained for request compatibility. The server deliberately uses its
+    # canonical demo actor and does not trust this caller-provided identity.
     user_id: Optional[str] = Field(default="aarav", example="aarav")
     recipient_id: Optional[str] = Field(default=None, example="support-verify@demo")
     recipient: Optional[str] = Field(default=None, example="support-verify@demo")
     amount: float = Field(..., gt=0, example=25000.0)
-    currency: str = Field(default="INR", example="INR")
-    message: Optional[str] = Field(default="", example="URGENT: Your refund will expire today. Send fee.")
-    reason: Optional[str] = Field(default=None, example="URGENT: Your refund will expire today. Send fee.")
-    payment_type: str = Field(default="UPI", example="UPI")
+    currency: str = Field(default="INR", min_length=3, max_length=10, example="INR")
+    message: Optional[str] = Field(default="", max_length=1000)
+    reason: Optional[str] = Field(default=None, max_length=1000)
+    payment_type: str = Field(default="UPI", min_length=2, max_length=30)
 
     def get_recipient(self) -> str:
-        return self.recipient_id or self.recipient or "unknown@upi"
+        return (self.recipient_id or self.recipient or "").strip()
 
     def get_message(self) -> str:
-        return self.message or self.reason or ""
+        return (self.message or self.reason or "").strip()
 
 
 class ActionRequest(BaseModel):
-    action: Optional[str] = "CONFIRM"
-    reason: Optional[str] = None
+    expected_version: int = Field(..., ge=1)
+    idempotency_key: str = Field(..., min_length=16, max_length=128)
+
+
+class GuidanceAcknowledgement(ActionRequest):
+    kind: Literal["INDEPENDENT_GUIDANCE_ACK"]
+    text_version: Literal["independent-contact-v1"]
+    affirmed: Literal[True]
+
+
+def _raise_lifecycle_error(error: PaymentLifecycleError) -> None:
+    raise HTTPException(status_code=error.status_code, detail={"code": error.code, "message": error.detail}) from error
 
 
 @router.post("/analyze", status_code=status.HTTP_200_OK)
-def analyze_payment(payload: PaymentAnalyzeRequest, background_tasks: BackgroundTasks):
-    """
-    Core Pre-Payment Interception Endpoint.
-    Analyzes transaction, evaluates risk, runs verification tools, and determines protective action BEFORE money moves.
-    See brain.md Section 22.
-    """
-    payment_dict = payload.model_dump()
-    payment_dict["recipient_id"] = payload.get_recipient()
-    payment_dict["message"] = payload.get_message()
-    payment_dict["user_id"] = payload.user_id or "aarav"
+def analyze_payment(
+    payload: PaymentAnalyzeRequest,
+    x_guardian_analysis_key: Optional[str] = Header(default=None),
+):
+    """Analyze once or recover the same durable pre-payment decision."""
+    recipient_id = payload.get_recipient()
+    message = payload.get_message()
+    if not recipient_id or not message:
+        raise HTTPException(status_code=422, detail="Recipient and payment reason are required for Guardian analysis.")
+    if x_guardian_analysis_key and not 16 <= len(x_guardian_analysis_key) <= 128:
+        raise HTTPException(status_code=422, detail="Guardian analysis key must be between 16 and 128 characters.")
 
-    # 1. Create transaction in state machine
-    txn_id = payment_service.create_pending_payment(payment_dict)
+    payment_dict: Dict[str, Any] = {
+        "user_id": "aarav",  # Server-owned demo actor; caller input is intentionally ignored.
+        "recipient_id": recipient_id,
+        "amount": payload.amount,
+        "currency": payload.currency.upper(),
+        "message": message,
+        "payment_type": payload.payment_type.upper(),
+    }
+    analysis_key = x_guardian_analysis_key or uuid.uuid4().hex
+    transaction_id: Optional[str] = None
 
-    # 2. Run Guardian Agentic Cycle (instant in-memory ReAct engine)
-    analysis = guardian_agent.analyze(payment_dict, transaction_id=txn_id)
+    try:
+        replayed = payment_service.replay_analysis(x_guardian_analysis_key)
+        if replayed:
+            return replayed
+        transaction_id = payment_service.create_pending_payment(payment_dict, analysis_key)
+        analysis = guardian_agent.analyze(payment_dict, transaction_id=transaction_id)
+        return payment_service.persist_analysis(transaction_id, analysis)
+    except PaymentLifecycleError as error:
+        if transaction_id:
+            payment_service.discard_pending_payment(transaction_id)
+        _raise_lifecycle_error(error)
+    except Exception as error:
+        if transaction_id:
+            payment_service.discard_pending_payment(transaction_id)
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "ANALYSIS_UNAVAILABLE", "message": "Guardian security check could not be completed. The payment remains paused."},
+        ) from error
 
-    # 3. Update state machine
-    payment_service.update_analysis_state(txn_id, analysis)
 
-    # 4. Asynchronously persist to Supabase in BackgroundTasks (sub-second response for UI!)
-    background_tasks.add_task(payment_service.persist_to_db, txn_id, analysis)
-    background_tasks.add_task(
-        audit_service.record_decision,
-        transaction_id=txn_id,
-        action=analysis["decision"],
-        risk_score=analysis["risk_score"],
-        reason=analysis["explanation"],
-        signals_count=len(analysis.get("signals", []))
-    )
-
-    return analysis
+@router.post("/{txn_id}/acknowledge-guidance", status_code=status.HTTP_200_OK)
+def acknowledge_guidance(
+    txn_id: str,
+    action_data: GuidanceAcknowledgement,
+    x_guardian_action_token: Optional[str] = Header(default=None),
+):
+    """Record a user attestation to independent-contact guidance; no external verification is claimed."""
+    try:
+        return payment_service.acknowledge_guidance(
+            txn_id,
+            x_guardian_action_token,
+            action_data.expected_version,
+            action_data.idempotency_key,
+            {
+                "kind": action_data.kind,
+                "text_version": action_data.text_version,
+                "affirmed": action_data.affirmed,
+                "guidance_text_version": GUIDANCE_TEXT_VERSION,
+            },
+        )
+    except PaymentLifecycleError as error:
+        _raise_lifecycle_error(error)
 
 
 @router.post("/{txn_id}/confirm", status_code=status.HTTP_200_OK)
-def confirm_payment(txn_id: str, action_data: Optional[ActionRequest] = None):
-    """
-    Confirms and authorizes payment if allowed by security policy.
-    """
-    payment = payment_service.get_payment(txn_id)
-    if not payment:
-        raise HTTPException(status_code=404, detail="Transaction not found.")
-
-    analysis = payment.get("analysis")
-    if analysis and analysis.get("decision") == "BLOCK":
-        raise HTTPException(
-            status_code=403,
-            detail="Transaction blocked by policy. This payment cannot be confirmed."
+def confirm_payment(
+    txn_id: str,
+    action_data: ActionRequest,
+    x_guardian_action_token: Optional[str] = Header(default=None),
+):
+    """Explicitly confirm only a server-policy-permitted, version-matched transaction."""
+    try:
+        return payment_service.confirm_payment(
+            txn_id, x_guardian_action_token, action_data.expected_version, action_data.idempotency_key
         )
-
-    success = payment_service.confirm_payment(txn_id)
-    return {
-        "transaction_id": txn_id,
-        "status": "COMPLETED",
-        "confirmed": success
-    }
+    except PaymentLifecycleError as error:
+        _raise_lifecycle_error(error)
 
 
 @router.post("/{txn_id}/cancel", status_code=status.HTTP_200_OK)
-def cancel_payment(txn_id: str):
-    """
-    Safely halts and cancels a held payment transaction.
-    """
-    payment = payment_service.get_payment(txn_id)
-    if not payment:
-        raise HTTPException(status_code=404, detail="Transaction not found.")
-
-    payment_service.cancel_payment(txn_id)
-    return {
-        "transaction_id": txn_id,
-        "status": "CANCELLED"
-    }
+def cancel_payment(
+    txn_id: str,
+    action_data: ActionRequest,
+    x_guardian_action_token: Optional[str] = Header(default=None),
+):
+    """Explicitly cancel a non-completed transaction through the durable lifecycle."""
+    try:
+        return payment_service.cancel_payment(
+            txn_id, x_guardian_action_token, action_data.expected_version, action_data.idempotency_key
+        )
+    except PaymentLifecycleError as error:
+        _raise_lifecycle_error(error)
