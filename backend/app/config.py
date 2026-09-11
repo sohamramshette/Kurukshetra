@@ -28,6 +28,16 @@ try:
         BACKEND_URL: str = "http://localhost:8000"
         DATABASE_URL: str = "sqlite:///./guardian.db"
 
+        # Supabase project settings (brain.md Section 23)
+        SUPABASE_PROJECT_ID: str = ""
+        SUPABASE_URL: str = ""
+        SUPABASE_ANON_KEY: str = ""
+        SUPABASE_SERVICE_ROLE_KEY: str = ""
+
+        # Auth / session signing
+        JWT_SECRET: str = "change_me_in_production"
+        JWT_ALGORITHM: str = "HS256"
+
         # LLM Settings (brain.md Section 18 & 37)
         LLM_API_KEY: str = ""
         LLM_MODEL: str = "gemini-flash-lite-latest"
@@ -58,6 +68,14 @@ except ImportError:
         FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
         BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
         DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./guardian.db")
+
+        SUPABASE_PROJECT_ID: str = os.getenv("SUPABASE_PROJECT_ID", "")
+        SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+        SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "")
+        SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+        JWT_SECRET: str = os.getenv("JWT_SECRET", "change_me_in_production")
+        JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
 
         LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
         LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-2.5-flash-lite")
