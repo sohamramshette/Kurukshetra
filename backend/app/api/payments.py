@@ -1,5 +1,5 @@
-from typing import Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, status
+from typing import Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, Field
 
 from app.guardian.agent import guardian_agent
@@ -32,7 +32,7 @@ class ActionRequest(BaseModel):
 
 
 @router.post("/analyze", status_code=status.HTTP_200_OK)
-def analyze_payment(payload: PaymentAnalyzeRequest):
+def analyze_payment(payload: PaymentAnalyzeRequest, background_tasks: BackgroundTasks):
     """
     Core Pre-Payment Interception Endpoint.
     Analyzes transaction, evaluates risk, runs verification tools, and determines protective action BEFORE money moves.
@@ -46,12 +46,16 @@ def analyze_payment(payload: PaymentAnalyzeRequest):
     # 1. Create transaction in state machine
     txn_id = payment_service.create_pending_payment(payment_dict)
 
-    # 2. Run Guardian Agentic Cycle
+    # 2. Run Guardian Agentic Cycle (instant in-memory ReAct engine)
     analysis = guardian_agent.analyze(payment_dict, transaction_id=txn_id)
 
-    # 3. Update state and record audit log
-    payment_service.update_analysis(txn_id, analysis)
-    audit_service.record_decision(
+    # 3. Update state machine
+    payment_service.update_analysis_state(txn_id, analysis)
+
+    # 4. Asynchronously persist to Supabase in BackgroundTasks (sub-second response for UI!)
+    background_tasks.add_task(payment_service.persist_to_db, txn_id, analysis)
+    background_tasks.add_task(
+        audit_service.record_decision,
         transaction_id=txn_id,
         action=analysis["decision"],
         risk_score=analysis["risk_score"],
