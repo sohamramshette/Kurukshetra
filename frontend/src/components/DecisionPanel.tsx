@@ -11,6 +11,7 @@ export interface DecisionPanelProps {
   onCancelPayment: () => void
   onProceedAnyway: () => void
   onVerifyRecipient: () => void
+  onStartCoercionCheck?: () => void
   onBackToPayment: () => void
 }
 
@@ -28,6 +29,7 @@ export function DecisionPanel({
   onCancelPayment,
   onProceedAnyway,
   onVerifyRecipient,
+  onStartCoercionCheck,
   result,
 }: DecisionPanelProps) {
   const [isConfirmingOverride, setIsConfirmingOverride] = useState(false)
@@ -78,9 +80,16 @@ export function DecisionPanel({
         </span>
       </div>
       <div className="decision-card__actions">
-        <Button onClick={onVerifyRecipient} variant="primary">{result.intervention.primary_button}</Button>
+        {!isBlocked && onStartCoercionCheck && (
+          <Button onClick={onStartCoercionCheck} variant="primary">
+            🛡️ Safety Interview (Coercion Check)
+          </Button>
+        )}
+        <Button onClick={onVerifyRecipient} variant={isBlocked ? 'primary' : 'secondary'}>
+          {result.intervention.primary_button}
+        </Button>
         <Button onClick={onCancelPayment} variant="ghost">Cancel Payment</Button>
-        {result.intervention.requires_explicit_override ? (
+        {result.intervention.requires_explicit_override && !isBlocked ? (
           <Button onClick={() => setIsConfirmingOverride(true)} variant="ghost">Proceed Anyway</Button>
         ) : null}
       </div>

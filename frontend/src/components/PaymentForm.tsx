@@ -47,6 +47,9 @@ function validatePayment(value: PaymentDraft): PaymentFieldErrors {
 
 export function PaymentForm({ isMockMode = false, isSubmitting = false, onChange, onSubmit, value }: PaymentFormProps) {
   const [errors, setErrors] = useState<PaymentFieldErrors>({})
+  const [simCall, setSimCall] = useState<boolean>(Boolean(value.sensor_telemetry?.active_call || (value.amount === '25000')))
+  const [simScreen, setSimScreen] = useState<boolean>(Boolean(value.sensor_telemetry?.screen_sharing || (value.recipient.includes('support'))))
+  const [simHesitation, setSimHesitation] = useState<boolean>(Boolean(value.sensor_telemetry?.keystroke_dynamics?.clipboard_paste || (value.amount === '25000')))
 
   const updateField = (field: PaymentFormField, nextValue: string) => {
     onChange({ ...value, [field]: nextValue })
@@ -76,11 +79,30 @@ export function PaymentForm({ isMockMode = false, isSubmitting = false, onChange
       return
     }
 
+    const sensorTelemetry = {
+      active_call: simCall,
+      call_duration_seconds: simCall ? 340 : 0,
+      call_type: 'cellular' as const,
+      screen_sharing: simScreen,
+      remote_app_name: simScreen ? 'AnyDesk Remote Support' : undefined,
+      keystroke_dynamics: {
+        inter_key_hesitation_ms: simHesitation ? 3800 : 320,
+        clipboard_paste: simHesitation,
+        time_to_input_seconds: simHesitation ? 38 : 7,
+      },
+      device_integrity: {
+        developer_mode_enabled: false,
+        accessibility_service_flag: simScreen,
+        untrusted_keyboard: false,
+      },
+    }
+
     await onSubmit({
       ...value,
       amount: value.amount.replace(/,/g, '').trim(),
       reason: value.reason.trim(),
       recipient: value.recipient.trim(),
+      sensor_telemetry: sensorTelemetry,
     })
   }
 
@@ -130,6 +152,52 @@ export function PaymentForm({ isMockMode = false, isSubmitting = false, onChange
         />
         <span className="payment-form__hint" id="payment-reason-hint">A clear reason helps keep the payment context understandable.</span>
         {errors.reason ? <span className="payment-form__error" id="payment-reason-error" role="alert">{errors.reason}</span> : null}
+      </div>
+
+      {/* Feature 4: Silent Threat Sensor Simulation & Telemetry Bar */}
+      <div className="payment-sensor-sim">
+        <div className="payment-sensor-sim__header">
+          <div>
+            <span className="payment-sensor-sim__eyebrow">📡 Silent Threat Sensors (Live Telemetry Simulator)</span>
+            <p className="payment-sensor-sim__subtitle">Simulate real-world victim coercion &amp; device compromise for demo testing.</p>
+          </div>
+          <span className="payment-sensor-sim__badge">PS09 Feature 4</span>
+        </div>
+
+        <div className="payment-sensor-sim__chips">
+          <button
+            type="button"
+            className={`payment-sensor-chip ${simCall ? 'payment-sensor-chip--active-danger' : ''}`}
+            onClick={() => setSimCall(!simCall)}
+            title="Toggle active phone call detection during payment"
+          >
+            <span>📞</span>
+            <span>{simCall ? 'Active Call (Ongoing 5m 40s)' : 'Call Sensor: Idle'}</span>
+            <span className="payment-sensor-chip__indicator" />
+          </button>
+
+          <button
+            type="button"
+            className={`payment-sensor-chip ${simScreen ? 'payment-sensor-chip--active-danger' : ''}`}
+            onClick={() => setSimScreen(!simScreen)}
+            title="Toggle background screen mirroring / AnyDesk detection"
+          >
+            <span>🖥️</span>
+            <span>{simScreen ? 'Screen Mirror: AnyDesk RAT' : 'Screen Share: Secure'}</span>
+            <span className="payment-sensor-chip__indicator" />
+          </button>
+
+          <button
+            type="button"
+            className={`payment-sensor-chip ${simHesitation ? 'payment-sensor-chip--active-warning' : ''}`}
+            onClick={() => setSimHesitation(!simHesitation)}
+            title="Toggle biometric typing hesitation & clipboard paste anomaly"
+          >
+            <span>⌨️</span>
+            <span>{simHesitation ? 'Biometrics: High Hesitation (3.8s)' : 'Biometrics: Normal Velocity'}</span>
+            <span className="payment-sensor-chip__indicator" />
+          </button>
+        </div>
       </div>
 
       <div className="payment-form__security-note">

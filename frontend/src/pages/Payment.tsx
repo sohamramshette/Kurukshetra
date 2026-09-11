@@ -14,7 +14,15 @@ import {
   type PaymentDraft,
 } from '../types/payment'
 
-const scenarioOptions: DemoScenario[] = ['safe', 'suspicious']
+const scenarioOptions: DemoScenario[] = [
+  'safe',
+  'new_recipient',
+  'urgency_spike',
+  'suspicious',
+  'sbi_impersonation',
+  'pig_butchering',
+  'prompt_injection',
+]
 
 function formatAmount(amount: string) {
   const numericAmount = Number(amount.replace(/,/g, ''))

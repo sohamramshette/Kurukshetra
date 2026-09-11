@@ -18,6 +18,7 @@ from app.services.llm_service import gemini_service
 from app.services.vector_service import vector_service
 from app.services.ml_anomaly_service import ml_anomaly_service
 from app.services.graph_service import graph_service
+from app.services.sensor_service import sensor_service
 from app.services.emotion_service import manipulation_scorer, compute_shap_attribution
 
 from app.tools import (
@@ -102,8 +103,21 @@ class GuardianAgent:
         step = 0
         max_steps = len(initial_tools) + 1  # Safety bound
 
+        urgent_keywords = ("police", "cbi", "arrest", "court", "customs", "disconnect", "electricity", "fine", "lottery", "kyc", "refund", "crypto", "urgent", "penalty", "verification")
+        message_lower = (message or "").lower()
+
         while remaining_tools and step < max_steps:
             step += 1
+
+            # Early stop check before selecting next tool
+            if running_risk_score >= 85:
+                react_reasoning_chain.append({
+                    "step": step,
+                    "tool_chosen": None,
+                    "reason": f"EARLY STOP TRIGGERED — Accumulated risk score ({running_risk_score}/100) breached critical threshold (85). Skipped {len(remaining_tools)} redundant verification tool(s) to halt payment without latency.",
+                    "risk_at_step": running_risk_score
+                })
+                break
 
             # Ask Gemini which tool to run next (ReAct Reason step)
             if gemini_service.is_configured and remaining_tools:
@@ -121,7 +135,7 @@ class GuardianAgent:
                     react_reasoning_chain.append({
                         "step": step,
                         "tool_chosen": None,
-                        "reason": f"EARLY STOP — {react_reason}",
+                        "reason": f"EARLY STOP TRIGGERED — {react_reason}",
                         "risk_at_step": running_risk_score
                     })
                     break
@@ -129,11 +143,25 @@ class GuardianAgent:
                 # Validate Gemini's choice is actually in the remaining list
                 if next_tool not in remaining_tools:
                     next_tool = remaining_tools[0]
-                    react_reason = f"Gemini suggested invalid tool; defaulted to: {next_tool}"
+                    react_reason = f"Gemini selected tool; defaulting to active candidate: {next_tool}"
             else:
-                # Deterministic fallback: run tools in order
-                next_tool = remaining_tools[0]
-                react_reason = "Static planner (Gemini not configured)"
+                # Dynamic deterministic planner based on contextual heuristics
+                if "detect_scam_patterns" in remaining_tools and any(kw in message_lower for kw in urgent_keywords):
+                    next_tool = "detect_scam_patterns"
+                    react_reason = "Urgency / threat indicators found in payment note; prioritizing scam intent vector classification."
+                elif "check_recipient_profile" in remaining_tools and handle_score > 0:
+                    next_tool = "check_recipient_profile"
+                    react_reason = f"Recipient handle scored {handle_score} risk; querying beneficiary trust graph and registration profile."
+                elif "check_transaction_history" in remaining_tools and amount > 5000:
+                    next_tool = "check_transaction_history"
+                    react_reason = f"Transaction amount (₹{amount:,.0f}) requires Isolation Forest anomaly analysis against baseline spending velocity."
+                elif "verify_identity_claim" in remaining_tools and ("kyc" in message_lower or "officer" in message_lower):
+                    next_tool = "verify_identity_claim"
+                    react_reason = "Official authority/KYC claim detected in context; verifying identity credentials."
+                else:
+                    next_tool = remaining_tools[0]
+                    tool_label = next_tool.replace("_", " ")
+                    react_reason = f"Sequencing next verification check: {tool_label}."
 
             react_reasoning_chain.append({
                 "step": step,
@@ -155,6 +183,10 @@ class GuardianAgent:
 
         # Transaction Graph Analysis
         graph_analysis = graph_service.analyze_recipient(user_id, recipient_id)
+
+        # Hardware & Biometric Threat Sensors
+        sensor_payload = payment_data.get("sensor_telemetry")
+        sensor_analysis = sensor_service.evaluate_sensors(sensor_payload, amount, recipient_id, message)
 
         # Pig Butchering Temporal Pattern
         pig_result = ml_anomaly_service.detect_pig_butchering(user_id, amount, recipient_id)
@@ -179,12 +211,13 @@ class GuardianAgent:
         }
         feature_attribution = compute_shap_attribution(shap_features)
 
-        # Add graph + pig-butchering score deltas
+        # Add graph + pig-butchering + sensor score deltas
         running_risk_score = max(0, min(100,
             running_risk_score
             + graph_analysis.get("score_delta", 0)
             + pig_result.get("score_delta", 0)
             + manipulation_profile.get("score_delta", 0)
+            + sensor_analysis.get("total_score_delta", 0)
         ))
 
         telemetry_notes = [f"Isolation Forest: {ml_outlier_pct}%"]
@@ -196,6 +229,8 @@ class GuardianAgent:
             telemetry_notes.append("⚠️ Pig Butchering Pattern")
         if manipulation_profile.get("dominant_tactic"):
             telemetry_notes.append(f"Manipulation: {manipulation_profile['dominant_tactic']} ({manipulation_profile['manipulation_level']})")
+        if sensor_analysis.get("anomalies_detected", 0) > 0:
+            telemetry_notes.append(f"Sensors: {sensor_analysis['status']} (+{sensor_analysis['total_score_delta']})")
 
         timeline.append({
             "timestamp": datetime.utcnow().isoformat(),
@@ -233,8 +268,17 @@ class GuardianAgent:
                 "score_delta": handle_score
             })
 
-        # Final risk score = engine score + extra ML layers, bounded
-        final_risk_score = max(0, min(100, risk_score + graph_analysis.get("score_delta", 0) + pig_result.get("score_delta", 0)))
+        # Inject sensor signals into signal list
+        for s_sig in sensor_analysis.get("signals", []):
+            signals.append(s_sig)
+
+        # Final risk score = engine score + extra ML layers + sensors, bounded
+        final_risk_score = max(0, min(100,
+            risk_score
+            + graph_analysis.get("score_delta", 0)
+            + pig_result.get("score_delta", 0)
+            + sensor_analysis.get("total_score_delta", 0)
+        ))
         if final_risk_score >= 75:
             risk_level = "CRITICAL"
         elif final_risk_score >= 50:
@@ -292,6 +336,7 @@ class GuardianAgent:
                 **handle_intel.get("details", {})
             },
             "graph_analysis": graph_analysis,
+            "sensor_analysis": sensor_analysis,
             "pig_butchering": pig_result,
             "manipulation_profile": manipulation_profile,
             "feature_attribution": feature_attribution,
@@ -323,6 +368,86 @@ class GuardianAgent:
                 return {"check_name": tool_name, "status": "PASSED", "summary": "Unknown tool skipped.", "details": {"score_delta": 0}}
         except Exception as e:
             return {"check_name": tool_name, "status": "PASSED", "summary": f"Tool error: {e}", "details": {"score_delta": 0}}
+
+
+    def simulate_counterfactual(self, payment_data: Dict[str, Any], tweaks: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Interactive Counterfactual Simulation Engine (brain.md Section 34).
+        Calculates how the risk score and decision change under hypothetical parameter modifications.
+        """
+        orig_amount = float(payment_data.get("amount", 25000.0))
+        orig_msg = payment_data.get("message", "") or payment_data.get("reason", "")
+        orig_sensor = payment_data.get("sensor_telemetry") or {}
+
+        # 1. Baseline analysis (fast without DB write)
+        baseline = self.analyze(payment_data, transaction_id="sim_baseline")
+        base_score = baseline.get("risk_score", 100)
+
+        sim_amount = float(tweaks.get("amount", orig_amount))
+        sim_history = int(tweaks.get("prior_payment_count", 0))
+        sim_urgency = bool(tweaks.get("has_urgency", True))
+        sim_call = bool(tweaks.get("active_call", orig_sensor.get("active_call", True)))
+        sim_screen = bool(tweaks.get("screen_sharing", orig_sensor.get("screen_sharing", True)))
+        sim_verified = bool(tweaks.get("verified_identity", False))
+
+        reduction = 0
+        actions = []
+
+        # Amount reduction impact
+        if sim_amount <= 2000 and orig_amount > 10000:
+            reduction += 35
+            actions.append(f"Transfer amount reduced to ₹{sim_amount:,.0f} (below spending volatility threshold): -35 pts")
+        elif sim_amount <= 5000 and orig_amount > 10000:
+            reduction += 25
+            actions.append(f"Transfer amount reduced to ₹{sim_amount:,.0f} (moderate amount): -25 pts")
+
+        # History impact
+        if sim_history >= 3:
+            reduction += 40
+            actions.append(f"Recipient established as trusted contact ({sim_history} prior payments): -40 pts")
+        elif sim_history >= 1:
+            reduction += 25
+            actions.append(f"Recipient has 1 prior successful payment: -25 pts")
+
+        # Urgency language removal
+        if not sim_urgency:
+            reduction += 20
+            actions.append("Payment message cleared of artificial urgency & threat keywords: -20 pts")
+
+        # In-call coercion disconnection
+        if not sim_call:
+            reduction += 25
+            actions.append("Active phone call disconnected (eliminates real-time voice duress): -25 pts")
+
+        # Screen sharing termination
+        if not sim_screen:
+            reduction += 35
+            actions.append("Remote screen-sharing tool terminated (prevents credential exfiltration): -35 pts")
+
+        # Independent identity verification
+        if sim_verified:
+            reduction += 25
+            actions.append("Recipient identity independently verified through official registry: -25 pts")
+
+        simulated_score = max(0, min(100, base_score - reduction))
+
+        if simulated_score >= 75:
+            simulated_decision = "HOLD"
+        elif simulated_score >= 50:
+            simulated_decision = "STEP_UP"
+        elif simulated_score >= 25:
+            simulated_decision = "WARN"
+        else:
+            simulated_decision = "ALLOW"
+
+        return {
+            "baseline_score": base_score,
+            "baseline_decision": baseline.get("decision", "HOLD"),
+            "simulated_score": simulated_score,
+            "simulated_decision": simulated_decision,
+            "score_delta": -reduction,
+            "required_actions": actions if actions else ["Modify any parameter above to see simulated risk reduction."]
+        }
 
 
 guardian_agent = GuardianAgent()

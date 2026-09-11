@@ -330,21 +330,53 @@ Return strictly in this JSON format:
         transaction_id: str,
         recipient_id: str,
         amount: float,
-        decision: str,
-        signals: list,
-        conversation_history: list
+        decision: str = "HOLD",
+        signals: list = None,
+        conversation_history: list = None,
+        language: str = "en"
     ) -> dict:
-        """
-        Multi-turn Guardian conversation: generates the next targeted probing question
-        to detect coercion, third-party pressure, or social engineering in progress.
-        Returns {"question": str, "question_type": str, "is_final": bool}
-        """
+        conversation_history = conversation_history or []
+        signals = signals or []
+        lang = (language or "en").lower()
+
         if not self.is_configured:
-            return {
-                "question": "Did someone contact you by phone, WhatsApp, or email and ask you to make this specific payment?",
-                "question_type": "COERCION_CHECK",
-                "is_final": False
-            }
+            q_num = len(conversation_history)
+            if q_num == 0:
+                if lang == "hi":
+                    q_text = "क्या किसी ने आपको फोन, एसएमएस या व्हाट्सएप पर यह भुगतान तुरंत करने का निर्देश दिया है?"
+                elif lang == "hinglish":
+                    q_text = "Kya kisi ne aapko phone, WhatsApp ya message par ye payment turant karne ko kaha?"
+                else:
+                    q_text = "Did someone contact you by phone, SMS, or WhatsApp and ask you to make this payment?"
+                return {
+                    "question": q_text,
+                    "question_type": "COERCION_CHECK",
+                    "is_final": False
+                }
+            elif q_num == 1:
+                if lang == "hi":
+                    q_text = "क्या वे बिजली काटने, खाता बंद होने या कानूनी कार्रवाई की धमकी देकर जल्दी करने का दबाव बना रहे हैं?"
+                elif lang == "hinglish":
+                    q_text = "Kya wo bijli katne, account block hone ya police action ki dhamki dekar jaldi karne ka pressure bana rahe hain?"
+                else:
+                    q_text = "Are they claiming an urgent deadline, power disconnection, account suspension, or legal consequences if you do not pay now?"
+                return {
+                    "question": q_text,
+                    "question_type": "PRESSURE_DETECT",
+                    "is_final": True
+                }
+            else:
+                if lang == "hi":
+                    q_text = "क्या आप पुष्टि कर सकते हैं कि आपने यह भुगतान अपनी मर्जी से शुरू किया है?"
+                elif lang == "hinglish":
+                    q_text = "Kya aap confirm kar sakte hain ki ye payment aapne apni marzi se initiate kiya hai?"
+                else:
+                    q_text = "Can you confirm that you personally initiated this payment and were not instructed by anyone else?"
+                return {
+                    "question": q_text,
+                    "question_type": "INTENT_CONFIRM",
+                    "is_final": True
+                }
 
         endpoint = f"{self.api_base}/{self.model}:generateContent?key={self.api_key}"
 
@@ -357,13 +389,14 @@ Return strictly in this JSON format:
 
         prompt = f"""
 You are the Payment Guardian conducting a protective pre-payment interview with user Aarav.
+Language requested: {lang} (Output in {lang}).
 A {decision} decision was issued for a ₹{amount:,.0f} payment to '{recipient_id}'.
 Detected risk signals: {signal_types}
 
 Conversation so far:
 {history_text}
 
-Generate the NEXT single question to ask Aarav. Goals:
+Generate the NEXT single question to ask Aarav in {lang}. Goals:
 - Detect if Aarav is under coercion (someone told him to pay)
 - Detect if Aarav personally knows the recipient  
 - Detect if this is a financial emergency pressure situation
@@ -373,7 +406,7 @@ Ask max 3 questions total across the whole conversation. If {len(conversation_hi
 
 Return strictly in this JSON format:
 {{
-  "question": "<compassionate, clear 1-sentence question for Aarav>",
+  "question": "<compassionate, clear 1-sentence question for Aarav in {lang}>",
   "question_type": "COERCION_CHECK" | "IDENTITY_VERIFY" | "INTENT_CONFIRM" | "PRESSURE_DETECT",
   "is_final": boolean
 }}
@@ -411,14 +444,64 @@ Return strictly in this JSON format:
         self,
         conversation_history: list,
         signals: list,
-        recipient_id: str
+        recipient_id: str,
+        language: str = "en"
     ) -> dict:
         """
         Final coercion assessment after multi-turn conversation completes.
         Returns {"coercion_detected": bool, "confidence": float, "updated_decision": str, "assessment": str}
         """
+        lang = (language or "en").lower()
         if not self.is_configured or not conversation_history:
-            return {"coercion_detected": False, "confidence": 0.5, "updated_decision": "HOLD", "assessment": "Insufficient conversation data."}
+            if not conversation_history:
+                return {"coercion_detected": False, "confidence": 0.5, "updated_decision": "HOLD", "assessment": "Insufficient conversation data."}
+            combined_answers = " ".join(str(t.get("answer", "")) for t in conversation_history).lower()
+            coercion_keywords = [
+                "called", "told me", "instructed", "whatsapp", "phone", "police", "cbi", "arrest",
+                "disconnect", "power", "threat", "demanded", "urgently", "fee", "scam", "deadline",
+                "officer", "support", "refund", "yes",
+                # Hinglish & Hindi keywords
+                "haan", "ha", "call aaya", "bol rahe the", "dhamki", "katne", "kat denge", "bijli",
+                "turant", "paisa bhejo", "dar", "officer ne bola", "account block"
+            ]
+            matches = [kw for kw in coercion_keywords if kw in combined_answers]
+            has_affirmative = any(a in combined_answers for a in ["yes", "haan", "ha", "sahi", "true"])
+            has_pressure = any(p in combined_answers for p in ["called", "told", "power", "disconnect", "urgent", "instructed", "bijli", "kat", "dhamki", "police", "phone"])
+
+            if len(matches) >= 2 or (has_affirmative and has_pressure):
+                if lang == "hi":
+                    assessment_text = "उच्च-विश्वास दबाव की पुष्टि: उपयोगकर्ता ने पुष्टि की कि उन्हें समय सीमा और बिजली/खाता काटने के दबाव में भुगतान करने का निर्देश दिया गया था। सुरक्षा कार्रवाई को 'BLOCK' में बदला गया।"
+                elif lang == "hinglish":
+                    assessment_text = "High-confidence coercion detected: User ne confirm kiya ki phone par unhe deadline aur bijli/account band hone ke pressure me transfer karne ko bola gaya. Escalated to BLOCK."
+                else:
+                    assessment_text = "High-confidence social engineering coercion detected: User confirmed being contacted and instructed under active deadline pressure. Escalating protective action to BLOCK."
+
+                return {
+                    "coercion_detected": True,
+                    "confidence": 0.94,
+                    "updated_decision": "BLOCK",
+                    "coercion_indicators": [
+                        "third-party phone / messaging instruction",
+                        "urgency extortion pressure",
+                        "coerced payment under threat"
+                    ],
+                    "assessment": assessment_text
+                }
+
+            if lang == "hi":
+                safe_text = "उपयोगकर्ता द्वारा किसी सक्रिय तीसरे पक्ष के दबाव की पुष्टि नहीं हुई है, लेकिन स्वतंत्र सत्यापन तक भुगतान 'HOLD' पर रहेगा।"
+            elif lang == "hinglish":
+                safe_text = "User ne active coercion confirm nahi kiya, par recipient independent verification tak payment 'HOLD' par rahega."
+            else:
+                safe_text = "No active third-party coercion confirmed by user, but transaction remains on HOLD pending independent recipient verification."
+
+            return {
+                "coercion_detected": False,
+                "confidence": 0.88,
+                "updated_decision": "HOLD",
+                "coercion_indicators": [],
+                "assessment": safe_text
+            }
 
         endpoint = f"{self.api_base}/{self.model}:generateContent?key={self.api_key}"
 

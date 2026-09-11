@@ -1,0 +1,24 @@
+**Feature 1 (Interactive Coercion Detection Chatbot)** has been implemented and validated end-to-end.
+
+Detailed verification results and test outputs are documented in the walkthrough artifact:
+📄 **[Walkthrough (walkthrough.md)](file:///C:/Users/lenovo/.gemini/antigravity-ide/brain/7db76098-be2a-48a7-b873-af1a92a81109/walkthrough.md)**
+
+---
+
+### Summary of Changes
+
+* **New Interactive UI Component:** Created [CoercionChatModal.tsx](file:///c:/Users/lenovo/OneDrive/Desktop/kurhh/Kurukshetra/frontend/src/components/CoercionChatModal.tsx) with live message stream, turn indicators (`Turn 1 of 2`), quick suggestion response chips, typing animation, and assessment result card.
+* **API Integration:** Added `converseGuardian()` to [api.ts](file:///c:/Users/lenovo/OneDrive/Desktop/kurhh/Kurukshetra/frontend/src/services/api.ts) and [mockGuardian.ts](file:///c:/Users/lenovo/OneDrive/Desktop/kurhh/Kurukshetra/frontend/src/services/mockGuardian.ts) connecting directly to `POST /api/guardian/converse`.
+* **Decision Panel & Page Wiring:** Updated [DecisionPanel.tsx](file:///c:/Users/lenovo/OneDrive/Desktop/kurhh/Kurukshetra/frontend/src/components/DecisionPanel.tsx) with a **"🛡️ Safety Interview (Coercion Check)"** action button and connected it in [Guardian.tsx](file:///c:/Users/lenovo/OneDrive/Desktop/kurhh/Kurukshetra/frontend/src/pages/Guardian.tsx) to escalate live decisions from `HOLD` to `BLOCK` when coercion is confirmed.
+* **Styling:** Added modal backdrop blur, message bubbles, chips, and danger card styling in [index.css](file:///c:/Users/lenovo/OneDrive/Desktop/kurhh/Kurukshetra/frontend/src/index.css).
+* **Backend Resiliency:** Enhanced [llm_service.py](file:///c:/Users/lenovo/OneDrive/Desktop/kurhh/Kurukshetra/backend/app/services/llm_service.py) with smart keyword detection fallback so the interview functions reliably whether using Gemini API or offline mode.
+
+---
+
+### Try it Now in Your Browser
+
+1. Open **[http://localhost:5173](http://localhost:5173)**.
+2. Select **"Suspicious payment"** and click **"Review payment with Guardian"**.
+3. In the Decision Panel on the right, click **"🛡️ Safety Interview (Coercion Check)"**.
+4. Click the quick suggestion chips to reply to the Guardian's questions.
+5. Watch the Guardian evaluate the responses in real time, detect coercion, and escalate the transaction from `HOLD` to **`BLOCK`**!

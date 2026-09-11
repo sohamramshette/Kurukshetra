@@ -1,0 +1,60 @@
+# Feature 4: Silent Threat Sensors & Biometric Telemetry is Complete! 🚀
+
+Directly implements **[brain.md](file:///c:/Users/lenovo/OneDrive/Desktop/kurhh/Kurukshetra/brain.md) §8 ("Behavioral & Social-Engineering Signals")**, **§15 ("Explainability")**, **§33.4 ("Voice/call scam context")**, and **§33.8 ("Device intelligence")**.
+
+---
+
+### What Was Built & Integrated
+
+1. **📡 Silent Threat Sensor & Telemetry Engine ([sensor_service.py](file:///c:/Users/lenovo/OneDrive/Desktop/kurhh/Kurukshetra/backend/app/services/sensor_service.py)):**
+   * **📞 Active Call Coercion Monitor:** Detects ongoing cellular/VoIP calls during payment initiation and duration tracking (`ACTIVE_CALL_COERCION`, $+25$ risk delta).
+   * **🖥️ Remote Screen Sharing / RAT Detection:** Flags AnyDesk, TeamViewer, QuickSupport background visual exfiltration (`REMOTE_SCREEN_SHARING_ACTIVE`, $+35$ risk delta).
+   * **⌨️ Biometric Stress & Hesitation Index:** Analyzes typing hesitation latency ($0-100\%$) and VPA clipboard paste anomalies (`BIOMETRIC_STRESS_HESITATION`, $+15$ risk delta).
+   * **🛡️ Device Sandbox & Overlay Abuse:** Checks for untrusted accessibility services with window-inspection permissions and developer mode (`ACCESSIBILITY_SERVICE_EXPLOIT`, $+20$ risk delta).
+   * Generates actionable hardware countermeasures (e.g. *disconnect call, terminate AnyDesk, disable overlay*).
+
+2. **🎛️ Interactive Hardware Sensor Simulator ([PaymentForm.tsx](file:///c:/Users/lenovo/OneDrive/Desktop/kurhh/Kurukshetra/frontend/src/components/PaymentForm.tsx)):**
+   * Added one-click toggle chips directly below the transfer reason field:
+     * `📞 Active Call (6m 25s)`
+     * `🖥️ Screen Mirror (AnyDesk)`
+     * `⌨️ Biometrics Hesitation (85%)`
+
+3. **📊 Live Threat Sensor Dashboard ([ThreatSensorPanel.tsx](file:///c:/Users/lenovo/OneDrive/Desktop/kurhh/Kurukshetra/frontend/src/components/ThreatSensorPanel.tsx)):**
+   * Live pulsing indicator (`Live Device Telemetry`) and status badge (`CRITICAL COMPROMISE`).
+   * 2x2 responsive cards grid with pulsing status LEDs and live biometric stress meter bar.
+   * Active threat signal breakdown tags and Guardian automated hardware countermeasures checklist.
+
+4. **📑 Dedicated Tab & Zero-Overlap Layout ([Guardian.tsx](file:///c:/Users/lenovo/OneDrive/Desktop/kurhh/Kurukshetra/frontend/src/pages/Guardian.tsx)):**
+   * Added `📡 Threat Sensors` tab alongside `ReAct Loop` and `Scam Graph` with dynamic alert badges (`4 Alerts` / `Clear`).
+   * Clean flex/grid architecture with `min-width: 0;` ensuring zero content overlap on any screen size.
+
+---
+
+### Verification Summary
+
+* **Frontend Production Build:**
+  ```text
+  > tsc -b && vite build
+  ✓ 52 modules transformed.
+  dist/assets/index-BpNHjn5w.css   74.90 kB │ gzip: 14.84 kB
+  dist/assets/index-D_liCbdI.js   251.58 kB │ gzip: 75.22 kB
+  ✓ built in 1.19s (0 errors)
+  ```
+* **Backend Live Sensor Evaluation Test:**
+  ```text
+  HTTP Status: 200 OK | Decision: HOLD | Risk Score: 100/100
+  Sensor Status: CRITICAL_COMPROMISE (4 Anomalies Detected)
+  Signals: ACTIVE_CALL_COERCION (+25), REMOTE_SCREEN_SHARING_ACTIVE (+35), 
+           BIOMETRIC_STRESS_HESITATION (+15), ACCESSIBILITY_SERVICE_EXPLOIT (+20)
+  ```
+
+---
+
+### How to Test in Browser
+
+1. Open **[http://localhost:5173](http://localhost:5173)** in your browser.
+2. Under **Send Payment**, check out the **Hardware Threat Sensors & Biometrics Simulator** chips to toggle any sensor.
+3. Click **"Execute Guardian Pre-Check"** or review the ₹25,000 electricity payment.
+4. On the Guardian page, click the **`📡 Threat Sensors`** tab to view the live biometric meters, screen-sharing alarms, and hardware countermeasures!
+
+See the updated [walkthrough.md](file:///c:/Users/lenovo/.gemini/antigravity-ide/brain/7db76098-be2a-48a7-b873-af1a92a81109/walkthrough.md) for full technical documentation.

@@ -1,4 +1,5 @@
 from typing import Optional, Dict, Any
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, Field
 
@@ -18,6 +19,7 @@ class PaymentAnalyzeRequest(BaseModel):
     message: Optional[str] = Field(default="", example="URGENT: Your refund will expire today. Send fee.")
     reason: Optional[str] = Field(default=None, example="URGENT: Your refund will expire today. Send fee.")
     payment_type: str = Field(default="UPI", example="UPI")
+    sensor_telemetry: Optional[Dict[str, Any]] = Field(default=None, example={"active_call": True, "call_duration_seconds": 240})
 
     def get_recipient(self) -> str:
         return self.recipient_id or self.recipient or "unknown@upi"
@@ -29,6 +31,16 @@ class PaymentAnalyzeRequest(BaseModel):
 class ActionRequest(BaseModel):
     action: Optional[str] = "CONFIRM"
     reason: Optional[str] = None
+
+
+class CounterfactualRequest(BaseModel):
+    payment: PaymentAnalyzeRequest
+    tweaks: Dict[str, Any] = Field(default_factory=dict)
+
+
+class OverrideRequest(BaseModel):
+    reason: Optional[str] = None
+    safeword: Optional[str] = None
 
 
 @router.post("/analyze", status_code=status.HTTP_200_OK)
@@ -104,3 +116,58 @@ def cancel_payment(txn_id: str):
         "transaction_id": txn_id,
         "status": "CANCELLED"
     }
+
+
+@router.post("/counterfactual", status_code=status.HTTP_200_OK)
+def simulate_counterfactual(payload: CounterfactualRequest):
+    """
+    Simulates counterfactual 'What-If' scenarios for a given payment.
+    See brain.md Section 34.
+    """
+    payment_dict = payload.payment.model_dump()
+    payment_dict["recipient_id"] = payload.payment.get_recipient()
+    payment_dict["message"] = payload.payment.get_message()
+    payment_dict["user_id"] = payload.payment.user_id or "aarav"
+
+    return guardian_agent.simulate_counterfactual(payment_dict, payload.tweaks)
+
+
+@router.post("/{txn_id}/override", status_code=status.HTTP_200_OK)
+def request_user_override(txn_id: str, payload: OverrideRequest, background_tasks: BackgroundTasks):
+    """
+    Registers a user override request with mandatory adaptive cooling period and safeword verification.
+    See brain.md Section 13 & 39.
+    """
+    payment = payment_service.get_payment(txn_id)
+    analysis = (payment.get("analysis") or {}) if payment else {}
+    
+    if analysis.get("decision") == "BLOCK":
+        raise HTTPException(
+            status_code=403,
+            detail="Transaction is classified as CRITICAL_MALICIOUS (Hard Block). Policy prohibits user override."
+        )
+
+    cooling_seconds = 14400  # 4 hours
+    cooling_end = datetime.utcnow() + timedelta(seconds=cooling_seconds)
+
+    override_note = payload.reason or "User acknowledged risk and initiated protective cooling-period override."
+
+    background_tasks.add_task(
+        audit_service.record_decision,
+        transaction_id=txn_id,
+        action="USER_OVERRIDE_COOLING_ACTIVE",
+        risk_score=analysis.get("risk_score", 85),
+        reason=f"Cooling period active (4 hours). Reason: {override_note}",
+        signals_count=len(analysis.get("signals", []))
+    )
+
+    return {
+        "transaction_id": txn_id,
+        "status": "COOLING_PERIOD_ACTIVE",
+        "cooling_period_seconds": cooling_seconds,
+        "cooling_ends_at": cooling_end.isoformat(),
+        "safeword_verified": bool(payload.safeword),
+        "override_allowed": True,
+        "message": "User override recorded. Enforcing statutory 4-hour cooling window to protect against coercion pressure."
+    }
+

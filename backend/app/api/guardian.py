@@ -18,6 +18,7 @@ _conversation_store: dict = {}
 class ConversationTurnRequest(BaseModel):
     transaction_id: str = Field(..., example="txn_abc12345")
     user_answer: Optional[str] = Field(default=None, example="Yes, someone called me and said to pay immediately.")
+    language: Optional[str] = Field(default="en", example="en")
 
 
 @router.get("/audit/logs")
@@ -101,13 +102,15 @@ def guardian_converse(payload: ConversationTurnRequest):
             last_entry["answer"] = payload.user_answer
 
     # Generate next question
+    lang = payload.language or "en"
     next_q = gemini_service.generate_conversation_question(
         transaction_id=txn_id,
         recipient_id=recipient_id,
         amount=amount,
         decision=decision,
         signals=signals,
-        conversation_history=[h for h in history if "answer" in h]
+        conversation_history=[h for h in history if "answer" in h],
+        language=lang
     )
 
     # Add question to history (answer will be added on next call)
@@ -120,7 +123,8 @@ def guardian_converse(payload: ConversationTurnRequest):
         coercion_result = gemini_service.evaluate_coercion(
             conversation_history=completed_turns,
             signals=signals,
-            recipient_id=recipient_id
+            recipient_id=recipient_id,
+            language=lang
         )
 
         # Log coercion result in audit
