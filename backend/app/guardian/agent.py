@@ -340,12 +340,16 @@ class GuardianAgent:
             "pig_butchering": pig_result,
             "manipulation_profile": manipulation_profile,
             "feature_attribution": feature_attribution,
+            "engine_status": gemini_service.get_engine_status(),
             "ml_telemetry": {
                 "isolation_forest_score": hist_details.get("ml_anomaly_score", 0.0),
                 "isolation_forest_pct": ml_outlier_pct,
                 "vector_match": vector_match,
                 "gemini_active": gemini_service.is_configured,
-                "gemini_model": gemini_service.model
+                "gemini_model": gemini_service.model,
+                "ai_engine": gemini_service.get_engine_status()["ai_engine"],
+                "is_fallback": gemini_service.get_engine_status()["is_fallback"],
+                "fallback_reason": gemini_service.get_engine_status().get("fallback_reason")
             }
         }
 

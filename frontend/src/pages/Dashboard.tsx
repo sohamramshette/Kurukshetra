@@ -173,6 +173,43 @@ export default function Dashboard() {
           </Card>
         )}
 
+        {/* Data Source & Authenticity Indicator */}
+        {metrics && (
+          <div
+            style={{
+              padding: '12px 18px',
+              borderRadius: '10px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: metrics.is_fallback
+                ? 'rgba(245, 158, 11, 0.08)'
+                : 'rgba(16, 185, 129, 0.08)',
+              border: metrics.is_fallback
+                ? '1px solid rgba(245, 158, 11, 0.3)'
+                : '1px solid rgba(16, 185, 129, 0.3)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '18px' }}>{metrics.is_fallback ? '⚠️' : '🟢'}</span>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '13px', color: metrics.is_fallback ? '#f59e0b' : '#10b981' }}>
+                  {metrics.is_fallback ? 'FALLBACK SYNTHETIC DATA ACTIVE' : 'GENUINE SUPABASE DATABASE ACTIVE'}
+                </div>
+                <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                  {metrics.is_fallback
+                    ? 'Backend database is offline or unreachable. Metrics are computed from synthetic prototype benchmarks.'
+                    : `Live queries connected to Supabase PostgreSQL (Project: jqsppbnmxtmstlrbsyyl). Aggregated over ${metrics.summary.transactions_analyzed} transactions.`}
+                </div>
+              </div>
+            </div>
+            <Badge tone={metrics.is_fallback ? 'warning' : 'success'}>
+              {metrics.is_fallback ? 'Fallback Mode' : 'Live Supabase DB'}
+            </Badge>
+          </div>
+        )}
+
         {/* 2. Executive KPI Cards Strip */}
         <div className="dashboard-kpi-grid">
           <Card className="dashboard-kpi-card">
@@ -415,7 +452,14 @@ export default function Dashboard() {
 
                     return (
                       <tr key={log.id}>
-                        <td className="font-mono text-xs font-semibold text-slate-500">{log.id}</td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span className="font-mono text-xs font-semibold text-slate-500">{log.id}</span>
+                            <Badge tone={log.is_fallback ? 'warning' : 'success'}>
+                              {log.is_fallback ? 'Fallback' : 'DB Live'}
+                            </Badge>
+                          </div>
+                        </td>
                         <td className="text-xs text-slate-600 whitespace-nowrap">
                           {new Date(log.timestamp).toLocaleString()}
                         </td>

@@ -1,4 +1,5 @@
 import json
+import time
 import datetime
 import logging
 import urllib.request
@@ -14,19 +15,48 @@ class GeminiService:
     """
     Client service for Google Gemini 2.0 / 2.5 Flash Lite.
     Uses standard library urllib for zero-dependency portability.
-    Implements structured JSON output and prompt injection defense.
+    Implements structured JSON output, prompt injection defense, and instant fail-fast circuit breaking.
     See brain.md Section 18, 25, 37 & 38.
     """
 
     def __init__(self):
-        self.api_key = settings.LLM_API_KEY
+        self.api_key = (settings.LLM_API_KEY or "").strip()
         self.model = settings.LLM_MODEL
         self.api_base = settings.GEMINI_API_BASE
         self.timeout = settings.LLM_TIMEOUT_SECONDS
+        self._circuit_broken_until = 0.0
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.api_key and len(self.api_key.strip()) > 5)
+        if not self.api_key or len(self.api_key) < 10:
+            return False
+        # Google AI Studio keys strictly start with AIza
+        if not self.api_key.startswith("AIza"):
+            return False
+        if time.time() < self._circuit_broken_until:
+            return False
+        return True
+
+    def _trip_circuit(self, reason: str):
+        self._circuit_broken_until = time.time() + 60.0
+        logger.warning(f"Gemini circuit tripped: {reason}. Switching to zero-latency deterministic ML engine.")
+
+    def get_engine_status(self) -> Dict[str, Any]:
+        if self.is_configured:
+            return {
+                "ai_engine": f"Google Gemini {self.model}",
+                "is_fallback": False,
+                "status": "LIVE_LLM",
+                "gemini_active": True
+            }
+        reason = "Valid Google AI Studio key ('AIzaSy...') not set in .env" if not self.api_key.startswith("AIza") else "API timeout / offline circuit breaker active"
+        return {
+            "ai_engine": "Pure-Python ML & Vector RAG (Fast Deterministic)",
+            "is_fallback": True,
+            "status": "FALLBACK_DETERMINISTIC",
+            "gemini_active": False,
+            "fallback_reason": reason
+        }
 
     def analyze_scam_intent(
         self,

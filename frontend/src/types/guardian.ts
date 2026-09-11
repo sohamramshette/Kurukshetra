@@ -84,6 +84,9 @@ export interface MlTelemetry {
   vector_match?: VectorMatch | null
   gemini_active: boolean
   gemini_model: string
+  ai_engine?: string
+  is_fallback?: boolean
+  fallback_reason?: string
 }
 
 export type MLTelemetry = MlTelemetry
@@ -262,6 +265,8 @@ export interface DashboardMetricsResponse {
   summary: DashboardSummary
   risk_distribution: DashboardRiskDistribution
   top_scam_patterns: DashboardScamPattern[]
+  data_source?: string
+  is_fallback?: boolean
 }
 
 export interface AuditLogEntry {
@@ -272,6 +277,8 @@ export interface AuditLogEntry {
   risk_score: number
   signals_detected: number
   reason: string
+  data_source?: string
+  is_fallback?: boolean
 }
 
 export interface AuditLogsResponse {
@@ -308,6 +315,8 @@ export interface ConversationTurnResponse {
   is_final_question?: boolean
   coercion_assessment?: CoercionAssessment | null
   message?: string
+  data_source?: string
+  is_fallback?: boolean
 }
 
 export interface CounterfactualTweakInput {

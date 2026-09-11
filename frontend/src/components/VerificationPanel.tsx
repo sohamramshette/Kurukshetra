@@ -69,7 +69,14 @@ export function VerificationPanel({ checks, source }: VerificationPanelProps) {
               <li className={check.status === 'PASSED' ? 'verification-item' : 'verification-item verification-item--attention'} key={key}>
                 <StatusBadge label={status.label} status={status.status} />
                 <div>
-                  <h3>{check.check_name}</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <h3 style={{ margin: 0 }}>{check.check_name}</h3>
+                    {check.details?.data_source === 'supabase_db' ? (
+                      <Badge tone="success">Supabase DB</Badge>
+                    ) : check.details?.is_fallback ? (
+                      <Badge tone="warning">Heuristic Fallback</Badge>
+                    ) : null}
+                  </div>
                   <p>{check.summary}</p>
                   {details.length > 0 ? (
                     <ul className="verification-item__details">

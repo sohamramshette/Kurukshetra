@@ -361,6 +361,9 @@ function parseResult(value: unknown): GuardianAnalysisResult {
     vector_match: parseVectorMatch(telemetry.vector_match),
     gemini_active: telemetry.gemini_active,
     gemini_model: telemetry.gemini_model,
+    ai_engine: typeof telemetry.ai_engine === 'string' ? telemetry.ai_engine : undefined,
+    is_fallback: typeof telemetry.is_fallback === 'boolean' ? telemetry.is_fallback : undefined,
+    fallback_reason: typeof telemetry.fallback_reason === 'string' ? telemetry.fallback_reason : undefined,
   }
 
   return {
@@ -514,8 +517,13 @@ export async function converseGuardian(
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new GuardianApiError('Safety interview timed out. Please try again.')
     }
-    // Fallback to mock conversation if network/server issue
-    return mockConverseGuardian(transactionId, userAnswer, language)
+    // Fallback to mock conversation if network/server issue (explicitly tagged)
+    const fallback = await mockConverseGuardian(transactionId, userAnswer, language)
+    return {
+      ...fallback,
+      data_source: 'mock_fallback',
+      is_fallback: true,
+    }
   } finally {
     window.clearTimeout(timeout)
   }
@@ -523,7 +531,8 @@ export async function converseGuardian(
 
 export async function fetchDashboardMetrics(): Promise<DashboardMetricsResponse> {
   if (guardianMode === 'mock') {
-    return mockFetchDashboardMetrics()
+    const mockData = await mockFetchDashboardMetrics()
+    return { ...mockData, data_source: 'mock_scenario', is_fallback: true }
   }
 
   const controller = new AbortController()
@@ -539,7 +548,12 @@ export async function fetchDashboardMetrics(): Promise<DashboardMetricsResponse>
     return (await response.json()) as DashboardMetricsResponse
   } catch (error) {
     if (error instanceof GuardianApiError) throw error
-    return mockFetchDashboardMetrics()
+    const fallback = await mockFetchDashboardMetrics()
+    return {
+      ...fallback,
+      data_source: 'synthetic_fallback',
+      is_fallback: true,
+    }
   } finally {
     window.clearTimeout(timeout)
   }
@@ -547,7 +561,11 @@ export async function fetchDashboardMetrics(): Promise<DashboardMetricsResponse>
 
 export async function fetchAuditLogs(): Promise<AuditLogsResponse> {
   if (guardianMode === 'mock') {
-    return mockFetchAuditLogs()
+    const mockData = await mockFetchAuditLogs()
+    return {
+      count: mockData.count,
+      logs: mockData.logs.map((l) => ({ ...l, data_source: 'mock_scenario', is_fallback: true })),
+    }
   }
 
   const controller = new AbortController()
@@ -563,7 +581,11 @@ export async function fetchAuditLogs(): Promise<AuditLogsResponse> {
     return (await response.json()) as AuditLogsResponse
   } catch (error) {
     if (error instanceof GuardianApiError) throw error
-    return mockFetchAuditLogs()
+    const fallback = await mockFetchAuditLogs()
+    return {
+      count: fallback.count,
+      logs: fallback.logs.map((l) => ({ ...l, data_source: 'synthetic_fallback', is_fallback: true })),
+    }
   } finally {
     window.clearTimeout(timeout)
   }
