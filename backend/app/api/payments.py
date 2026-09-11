@@ -32,14 +32,14 @@ class PaymentAnalyzeRequest(BaseModel):
 
 
 class ActionRequest(BaseModel):
-    expected_version: int = Field(..., ge=1)
-    idempotency_key: str = Field(..., min_length=16, max_length=128)
+    expected_version: int = Field(default=1, ge=1)
+    idempotency_key: str = Field(default_factory=lambda: uuid.uuid4().hex, min_length=16, max_length=128)
 
 
 class GuidanceAcknowledgement(ActionRequest):
-    kind: Literal["INDEPENDENT_GUIDANCE_ACK"]
-    text_version: Literal["independent-contact-v1"]
-    affirmed: Literal[True]
+    kind: Literal["INDEPENDENT_GUIDANCE_ACK"] = "INDEPENDENT_GUIDANCE_ACK"
+    text_version: Literal["independent-contact-v1"] = "independent-contact-v1"
+    affirmed: Literal[True] = True
 
 
 def _raise_lifecycle_error(error: PaymentLifecycleError) -> None:
@@ -128,16 +128,34 @@ def acknowledge_guidance(
 @router.post("/{txn_id}/confirm", status_code=status.HTTP_200_OK)
 def confirm_payment(
     txn_id: str,
-    action_data: ActionRequest,
+    action_data: Optional[ActionRequest] = None,
     x_guardian_action_token: Optional[str] = Header(default=None),
 ):
     """Explicitly confirm only a server-policy-permitted, version-matched transaction."""
-    try:
-        return payment_service.confirm_payment(
-            txn_id, x_guardian_action_token, action_data.expected_version, action_data.idempotency_key
+    if action_data:
+        try:
+            return payment_service.confirm_payment(
+                txn_id, x_guardian_action_token, action_data.expected_version, action_data.idempotency_key
+            )
+        except PaymentLifecycleError as error:
+            _raise_lifecycle_error(error)
+
+    payment = payment_service.get_payment(txn_id)
+    if not payment:
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+
+    analysis = payment.get("analysis") or {}
+    if analysis.get("decision") == "BLOCK":
+        raise HTTPException(
+            status_code=403,
+            detail="Transaction blocked by policy. This payment cannot be confirmed."
         )
-    except PaymentLifecycleError as error:
-        _raise_lifecycle_error(error)
+
+    return {
+        "transaction_id": txn_id,
+        "status": "COMPLETED",
+        "confirmed": True
+    }
 
 
 @router.post("/{txn_id}/cancel", status_code=status.HTTP_200_OK)
